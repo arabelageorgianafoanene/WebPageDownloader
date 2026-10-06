@@ -4,6 +4,7 @@
         Uri Url,
         bool Success,
         int? StatusCode,
-        string? Content,
+        string? FilePath,
+        long? FileSize,
         string? Error);
 }
