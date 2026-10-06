@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="../WebPageDownloaderTests/WebPageDownloaderTests.csproj" />
-  <Project Path="WebPageDownloader.csproj" />
-</Solution>
