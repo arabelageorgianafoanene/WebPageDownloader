@@ -11,6 +11,7 @@ namespace WebPageDownloader.Services
         private readonly HttpClient _httpClient;
         private readonly IPageStore _store;
         private readonly int _maxConcurrency;
+        private readonly int _timeout;
 
         private readonly ILogger<WebPageDownloader> _logger;
 
@@ -19,6 +20,7 @@ namespace WebPageDownloader.Services
             _httpClient = httpClient;
             _store = store;
             _maxConcurrency = options.Value.MaxConcurrency;
+            _timeout = options.Value.RequestTimeoutSeconds;
             _logger = logger;
         }
 
@@ -72,9 +74,15 @@ namespace WebPageDownloader.Services
                 _logger.LogWarning("Download of {Url} was canceled", url);
                 throw;
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Error downloading {Url}: {Message}", url, ex.Message);
+                _logger.LogWarning(ex, "Timed out downloading {Url}", url);
+                return new DownloadResult(url, false, null, null, null,
+                    $"Request timed out after {_timeout:0}s");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to download {Url}: {Message}", url, ex.Message);
                 return new DownloadResult(url, false, null, null, null, ex.Message);
             }
         }

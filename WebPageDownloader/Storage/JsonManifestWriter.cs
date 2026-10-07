@@ -23,9 +23,9 @@ namespace WebPageDownloader.Storage
 
         public async Task WriteAsync(IReadOnlyList<DownloadResult> results, CancellationToken cancellationToken)
         {
-            var entries = results.Select(r => new ManifestEntry(r?.Url?.ToString()?? string.Empty, r?.FilePath?? string.Empty, r?.Success?? false, r?.ErrorMessage?? string.Empty));
+            var entries = results.Select(r => new ManifestEntry(r.Url.ToString(), r.FilePath is null ? null : Path.GetFileName(r.FilePath), r.Success, r.ErrorMessage)).ToList();
 
-            _logger.LogInformation("Writing manifest to {ManifestPath} with {Count} entries", _manifestPath, entries.Count());
+            _logger.LogInformation("Writing manifest to {ManifestPath} with {Count} entries", _manifestPath, entries.Count);
 
             await using var stream = File.Create(_manifestPath);
             

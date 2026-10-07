@@ -23,29 +23,48 @@ namespace WebPageDownloader.Application
 
         public async Task<int> RunAsync(CancellationToken cancellationToken = default)
         {
-            var input = await _urlSource.ReadAsync(cancellationToken);
+            UrlReadResult urlReadResult;
 
-            foreach (var invalid in input.InvalidEntries)
+            try
+            {
+                urlReadResult = await _urlSource.ReadAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogCritical(ex, "Error reading URLs.");
+                return 1;
+            }
+
+            foreach (var invalid in urlReadResult.InvalidEntries)
             {
                 _logger.LogWarning("Skipping invalid entry: {Entry}", invalid);
             }
 
-            if (input.Urls.Count == 0)
+            if (urlReadResult.Urls.Count == 0)
             {
                 _logger.LogError("No valid URLs to download.");
                 return 1;
             }
 
-            var results = await _downloader.DownloadAsync(input.Urls, cancellationToken);
+            var results = await _downloader.DownloadAsync(urlReadResult.Urls, cancellationToken);
 
             var succeededResultsCount = results.Count(r => r.Success);
             var failedResultsCount = results.Count - succeededResultsCount;
 
             _logger.LogInformation(
             "Done: {Succeeded} succeeded, {Failed} failed, {Invalid} invalid entries skipped.",
-            succeededResultsCount, failedResultsCount, input.InvalidEntries.Count);
+            succeededResultsCount, failedResultsCount, urlReadResult.InvalidEntries.Count);
 
-            await _manifestWriter.WriteAsync(results, cancellationToken);
+            try
+            {
+                await _manifestWriter.WriteAsync(results, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Downloads finished, but the manifest could not be written.");
+                return 1;
+            }
+
             _logger.LogInformation("Manifest written successfully.");
 
             return succeededResultsCount == 0 ? 1 : 0;

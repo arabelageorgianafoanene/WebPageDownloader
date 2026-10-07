@@ -31,6 +31,8 @@ namespace WebPageDownloader.Storage
 
         public async Task<StoredPage> SaveAsync(Uri url, Stream content, CancellationToken cancellationToken)
         {
+            var saved = false;
+
             var fileName = Convert.ToHexString(
                 SHA256.HashData(Encoding.UTF8.GetBytes(url.AbsoluteUri))) + ".html";
 
@@ -57,17 +59,24 @@ namespace WebPageDownloader.Storage
                 File.Move(tempPath, finalPath, overwrite: true);
                 _logger.LogInformation("Saved page for URL {Url} to {FilePath} ({Bytes} bytes)", url, finalPath, bytes);
 
+                saved = true;
                 return new StoredPage(finalPath, bytes);
             }
-            catch
+            catch(Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogError("Failed to save page for URL {Url} to {TempPath}", url, tempPath);
-                TryDelete(tempPath);
                 throw;
+            }
+            finally
+            {
+                if(!saved)
+                {
+                    TryDelete(tempPath);
+                }   
             }
         }
 
-        private static void TryDelete(string path)
+        private void TryDelete(string path)
         {
             try
             {
@@ -76,9 +85,9 @@ namespace WebPageDownloader.Storage
                     File.Delete(path);
                 }
             }
-            catch (IOException)
+            catch (IOException ex)
             {
-             
+                _logger.LogError(ex, "Failed to delete file {FilePath}", path);
             }
         }
     }
