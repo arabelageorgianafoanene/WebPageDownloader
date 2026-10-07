@@ -43,7 +43,9 @@ if (!File.Exists(inputPath))
     return 1;
 }
 
-builder.Services.AddSingleton<IPageStore, FileSystemPageStore>();
+builder.Services.AddSingleton<IPageStore, FileSystemStore>();
+
+builder.Services.AddSingleton<IManifestWriter, JsonManifestWriter>();
 
 builder.Services.AddSingleton<IUrlSource>(sp =>
     new FileUrlSource(

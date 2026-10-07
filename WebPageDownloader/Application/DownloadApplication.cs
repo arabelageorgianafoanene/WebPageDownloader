@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using WebPageDownloader.Input;
 using WebPageDownloader.Services;
+using WebPageDownloader.Storage;
 
 namespace WebPageDownloader.Application
 {
@@ -8,12 +9,15 @@ namespace WebPageDownloader.Application
     {
         private readonly IWebPageDownloader _downloader;
         private readonly IUrlSource _urlSource;
+
+        private readonly IManifestWriter _manifestWriter;
         private readonly ILogger<DownloadApplication> _logger;
 
-        public DownloadApplication(IWebPageDownloader downloader, IUrlSource urlSource, ILogger<DownloadApplication> logger)
+        public DownloadApplication(IWebPageDownloader downloader, IUrlSource urlSource, IManifestWriter manifestWriter, ILogger<DownloadApplication> logger)
         {
             _downloader = downloader;
             _urlSource = urlSource;
+            _manifestWriter = manifestWriter;
             _logger = logger;
         }
 
@@ -34,14 +38,17 @@ namespace WebPageDownloader.Application
 
             var results = await _downloader.DownloadAsync(input.Urls, cancellationToken);
 
-            var succeeded = results.Count(r => r.Success);
-            var failed = results.Count - succeeded;
+            var succeededResultsCount = results.Count(r => r.Success);
+            var failedResultsCount = results.Count - succeededResultsCount;
 
             _logger.LogInformation(
             "Done: {Succeeded} succeeded, {Failed} failed, {Invalid} invalid entries skipped.",
-            succeeded, failed, input.InvalidEntries.Count);
+            succeededResultsCount, failedResultsCount, input.InvalidEntries.Count);
 
-            return succeeded == 0 ? 1 : 0;
+            await _manifestWriter.WriteAsync(results, cancellationToken);
+            _logger.LogInformation("Manifest written successfully.");
+
+            return succeededResultsCount == 0 ? 1 : 0;
         }
     }
 }

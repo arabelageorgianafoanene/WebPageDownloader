@@ -6,5 +6,5 @@
         int? StatusCode,
         string? FilePath,
         long? FileSize,
-        string? Error);
+        string? ErrorMessage);
 }

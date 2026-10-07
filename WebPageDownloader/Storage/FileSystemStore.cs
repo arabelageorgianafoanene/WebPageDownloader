@@ -7,13 +7,13 @@ using WebPageDownloader.Configuration;
 
 namespace WebPageDownloader.Storage
 {
-    public class FileSystemPageStore : IPageStore
+    public class FileSystemStore : IPageStore
     {
         private readonly string _root;
 
-        private readonly ILogger<FileSystemPageStore> _logger;
+        private readonly ILogger<FileSystemStore> _logger;
 
-        public FileSystemPageStore(IOptions<DownloaderOptions> options, ILogger<FileSystemPageStore> logger)
+        public FileSystemStore(IOptions<DownloaderOptions> options, ILogger<FileSystemStore> logger)
         {
             _logger = logger;
 
