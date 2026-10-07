@@ -125,10 +125,8 @@ WebPageDownloader/
 
 ## Possible next steps
 
-- Retries with exponential backoff and jitter for transient errors (timeouts, 5xx, 429), respecting `Retry-After` (for example with `Microsoft.Extensions.Http.Resilience`).
-- A per-host concurrency limit, so one site cannot be hit with all parallel requests.
-- A database-backed `IPageStore` (for example SQLite with page metadata in the database and content on disk) for querying and resuming runs.
-- Choose the file extension from the `Content-Type` header.
-- A maximum response size to protect against very large downloads.
-- Skip URLs whose file already exists, to resume an interrupted run.
-- Progress reporting through `IProgress<T>` for long runs.
+- **Richer command-line interface with System.CommandLine.** Today the input file is a single
+  positional argument that `Program.cs` picks out of the command-line arguments by hand
+  That is deliberately small. If the interface grows (more options, subcommands), I would move to
+  [System.CommandLine](https://learn.microsoft.com/dotnet/standard/commandline/), Microsoft's library for
+  command-line parsing. 

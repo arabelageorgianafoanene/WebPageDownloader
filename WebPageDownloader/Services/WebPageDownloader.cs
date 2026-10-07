@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using WebPageDownloader.Configuration;
 using WebPageDownloader.Models;
 using WebPageDownloader.Storage;
@@ -11,16 +12,19 @@ namespace WebPageDownloader.Services
         private readonly IPageStore _store;
         private readonly int _maxConcurrency;
 
-        public WebPageDownloader(HttpClient httpClient, IPageStore store, IOptions<DownloaderOptions> options)
+        private readonly ILogger<WebPageDownloader> _logger;
+
+        public WebPageDownloader(HttpClient httpClient, IPageStore store, IOptions<DownloaderOptions> options, ILogger<WebPageDownloader> logger)
         {
             _httpClient = httpClient;
             _store = store;
             _maxConcurrency = options.Value.MaxConcurrency;
+            _logger = logger;
         }
 
         public async Task<IReadOnlyList<DownloadResult>> DownloadAsync(IEnumerable<Uri> urls, CancellationToken cancellationToken)
         {
-            var list = urls.Distinct().ToList();
+            var list = urls.ToList();
             var results = new DownloadResult[list.Count];
 
             await Parallel.ForEachAsync(
@@ -42,10 +46,14 @@ namespace WebPageDownloader.Services
                 using var response = await _httpClient.GetAsync(
                     url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+                _logger.LogInformation("Downloaded {Url} with status code {StatusCode}", url, (int)response.StatusCode);
+
                 var statusCode = (int)response.StatusCode;
 
                 if (!response.IsSuccessStatusCode)
                 {
+                    _logger.LogWarning("Failed to download {Url} with status code {StatusCode} and reason {Reason}", url, statusCode, response.ReasonPhrase);
+
                     return new DownloadResult(
                         url, false, statusCode, null, null,
                         $"HTTP {statusCode} ({response.ReasonPhrase})");
@@ -55,14 +63,18 @@ namespace WebPageDownloader.Services
 
                 var stored = await _store.SaveAsync(url, stream, cancellationToken);
 
+                _logger.LogInformation("Saved {Url} to {FilePath} ({FileSize} bytes)", url, stored.Path, stored.Bytes);
+
                 return new DownloadResult(url, true, statusCode, stored.Path, stored.Bytes, null);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                _logger.LogWarning("Download of {Url} was canceled", url);
                 throw;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
+                _logger.LogError(ex, "Error downloading {Url}: {Message}", url, ex.Message);
                 return new DownloadResult(url, false, null, null, null, ex.Message);
             }
         }

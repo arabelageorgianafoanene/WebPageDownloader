@@ -1,4 +1,5 @@
 ﻿
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,13 +11,20 @@ namespace WebPageDownloader.Storage
     {
         private readonly string _root;
 
-        public FileSystemPageStore(IOptions<DownloaderOptions> options)
+        private readonly ILogger<FileSystemPageStore> _logger;
+
+        public FileSystemPageStore(IOptions<DownloaderOptions> options, ILogger<FileSystemPageStore> logger)
         {
+            _logger = logger;
+
             _root = Path.GetFullPath(options.Value.OutputDirectory);
             Directory.CreateDirectory(_root);
 
+            _logger.LogInformation("Using output directory: {OutputDirectory}", _root);
+
             foreach (var staleFile in Directory.EnumerateFiles(_root, "*.tmp"))
             {
+                _logger.LogInformation("Found stale file {FilePath}", staleFile);
                 TryDelete(staleFile);
             }
         }
@@ -28,6 +36,8 @@ namespace WebPageDownloader.Storage
 
             var finalPath = Path.Combine(_root, fileName);
             var tempPath = $"{finalPath}.{Guid.NewGuid():N}.tmp";
+
+            _logger.LogInformation("Saving page for URL {Url} to {TempPath}", url, tempPath);
 
             try
             {
@@ -42,12 +52,16 @@ namespace WebPageDownloader.Storage
                     bytes = file.Length;
                 }
 
+                _logger.LogInformation("Successfully saved page for URL {Url} to {TempPath} ({Bytes} bytes)", url, tempPath, bytes);
+
                 File.Move(tempPath, finalPath, overwrite: true);
+                _logger.LogInformation("Saved page for URL {Url} to {FilePath} ({Bytes} bytes)", url, finalPath, bytes);
 
                 return new StoredPage(finalPath, bytes);
             }
             catch
             {
+                _logger.LogError("Failed to save page for URL {Url} to {TempPath}", url, tempPath);
                 TryDelete(tempPath);
                 throw;
             }
