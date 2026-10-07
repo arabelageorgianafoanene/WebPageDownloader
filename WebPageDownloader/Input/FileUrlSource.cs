@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace WebPageDownloader.Input
 {
-    public class FileUrlSource : IUrlSource
+    public sealed class FileUrlSource : IUrlSource
     {
         private readonly string _filePath;
         private readonly ILogger<FileUrlSource> _logger;

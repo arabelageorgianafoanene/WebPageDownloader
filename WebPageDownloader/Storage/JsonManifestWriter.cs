@@ -6,7 +6,7 @@ using WebPageDownloader.Models;
 
 namespace WebPageDownloader.Storage
 {
-    public class JsonManifestWriter : IManifestWriter
+    public sealed class JsonManifestWriter : IManifestWriter
     {
         private readonly string _manifestPath;
         private readonly ILogger<JsonManifestWriter> _logger;
