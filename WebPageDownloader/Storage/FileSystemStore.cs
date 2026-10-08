@@ -10,12 +10,15 @@ namespace WebPageDownloader.Storage
     public class FileSystemStore : IPageStore
     {
         private readonly string _root;
+        private readonly long _maxFileSizeBytes;
 
         private readonly ILogger<FileSystemStore> _logger;
 
         public FileSystemStore(IOptions<DownloaderOptions> options, ILogger<FileSystemStore> logger)
         {
             _logger = logger;
+
+            _maxFileSizeBytes = options.Value.MaxFileSizeBytes;
 
             _root = Path.GetFullPath(options.Value.OutputDirectory);
             Directory.CreateDirectory(_root);
@@ -29,7 +32,7 @@ namespace WebPageDownloader.Storage
             }
         }
 
-        public async Task<StoredPage> SaveAsync(Uri url, Stream content, long limit, CancellationToken cancellationToken)
+        public async Task<StoredPage> SaveAsync(Uri url, Stream content, CancellationToken cancellationToken)
         {
             var saved = false;
 
@@ -49,7 +52,7 @@ namespace WebPageDownloader.Storage
                     tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     bufferSize: 81920, useAsync: true))
                 {
-                    await StreamLimiter.CopyWithLimitAsync(content, file, limit, url, cancellationToken);
+                    await StreamLimiter.CopyWithLimitAsync(content, file, _maxFileSizeBytes, url, cancellationToken);
                     await file.FlushAsync(cancellationToken);
                     bytes = file.Length;
                 }

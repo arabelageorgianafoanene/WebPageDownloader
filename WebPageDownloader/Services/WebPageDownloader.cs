@@ -88,7 +88,7 @@ namespace WebPageDownloader.Services
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-                var stored = await _store.SaveAsync(url, stream, _maxFileSizeBytes, cancellationToken);
+                var stored = await _store.SaveAsync(url, stream, cancellationToken);
 
                 _logger.LogInformation("Saved {Url} to {FilePath} ({FileSize} bytes)", url, stored.Path, stored.Bytes);
 
