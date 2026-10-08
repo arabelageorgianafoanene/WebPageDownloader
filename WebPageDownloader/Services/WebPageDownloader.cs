@@ -1,6 +1,10 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Registry;
+using Polly.Timeout;
 using WebPageDownloader.Configuration;
+using WebPageDownloader.Extensions;
 using WebPageDownloader.Models;
 using WebPageDownloader.Storage;
 
@@ -11,16 +15,16 @@ namespace WebPageDownloader.Services
         private readonly HttpClient _httpClient;
         private readonly IPageStore _store;
         private readonly int _maxConcurrency;
-        private readonly int _timeout;
+        private readonly ResiliencePipeline _pipeline;
 
         private readonly ILogger<WebPageDownloader> _logger;
 
-        public WebPageDownloader(HttpClient httpClient, IPageStore store, IOptions<DownloaderOptions> options, ILogger<WebPageDownloader> logger)
+        public WebPageDownloader(HttpClient httpClient, IPageStore store, IOptions<DownloaderOptions> options, ResiliencePipelineProvider<string> provider, ILogger<WebPageDownloader> logger)
         {
             _httpClient = httpClient;
             _store = store;
             _maxConcurrency = options.Value.MaxConcurrency;
-            _timeout = options.Value.RequestTimeoutSeconds;
+            _pipeline = provider.GetPipeline(DownloadResilience.PipelineName);
             _logger = logger;
         }
 
@@ -36,7 +40,30 @@ namespace WebPageDownloader.Services
                     MaxDegreeOfParallelism = _maxConcurrency,
                     CancellationToken = cancellationToken
                 },
-                async (i, ct) => results[i] = await DownloadPageAsync(list[i], ct));
+               
+               async (i, token) =>
+               {
+                   try
+                   {
+                       results[i] = await _pipeline.ExecuteAsync(async t => await DownloadPageAsync(list[i], t), token);
+                   }
+                   catch (OperationCanceledException) when (token.IsCancellationRequested)
+                   {
+                       throw;
+                   }
+                   catch (Exception ex)
+                   {
+                       var status = (ex as HttpRequestException)?.StatusCode;
+                       var message = ex is TimeoutRejectedException
+                           ? "Request timed out"
+                           : ex.Message;
+
+                       _logger.LogWarning(ex, "Failed to download {Url} after retries", list[i]);
+
+                       results[i] = new DownloadResult(
+                            list[i], false, status is null ? null : (int)status, null, null, message);
+                   }
+               });
 
             return results;
         }
@@ -48,18 +75,8 @@ namespace WebPageDownloader.Services
                 using var response = await _httpClient.GetAsync(
                     url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
-                _logger.LogInformation("Downloaded {Url} with status code {StatusCode}", url, (int)response.StatusCode);
-
+                response.EnsureSuccessStatusCode();
                 var statusCode = (int)response.StatusCode;
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Failed to download {Url} with status code {StatusCode} and reason {Reason}", url, statusCode, response.ReasonPhrase);
-
-                    return new DownloadResult(
-                        url, false, statusCode, null, null,
-                        $"HTTP {statusCode} ({response.ReasonPhrase})");
-                }
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
@@ -73,17 +90,6 @@ namespace WebPageDownloader.Services
             {
                 _logger.LogWarning("Download of {Url} was canceled", url);
                 throw;
-            }
-            catch (TaskCanceledException ex)
-            {
-                _logger.LogWarning(ex, "Timed out downloading {Url}", url);
-                return new DownloadResult(url, false, null, null, null,
-                    $"Request timed out after {_timeout:0}s");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to download {Url}: {Message}", url, ex.Message);
-                return new DownloadResult(url, false, null, null, null, ex.Message);
             }
         }
     }
