@@ -44,7 +44,7 @@ By default everything is written to the `output` folder:
 output/
 ├── 3A7F9C21B4E05D....html     # one file per successfully downloaded URL
 ├── 9B12E7F0A3C4D1....html
-└── results.jsonl              # one JSON line per URL
+└── manifest.json              # one JSON entry per URL
 ```
 
 Example manifest lines:
