@@ -15,6 +15,8 @@ namespace WebPageDownloader.Services
         private readonly HttpClient _httpClient;
         private readonly IPageStore _store;
         private readonly int _maxConcurrency;
+
+        private readonly long _maxFileSizeBytes;
         private readonly ResiliencePipeline _pipeline;
 
         private readonly ILogger<WebPageDownloader> _logger;
@@ -25,6 +27,7 @@ namespace WebPageDownloader.Services
             _store = store;
             _maxConcurrency = options.Value.MaxConcurrency;
             _pipeline = provider.GetPipeline(DownloadResilience.PipelineName);
+            _maxFileSizeBytes = options.Value.MaxFileSizeBytes;
             _logger = logger;
         }
 
@@ -78,9 +81,14 @@ namespace WebPageDownloader.Services
                 response.EnsureSuccessStatusCode();
                 var statusCode = (int)response.StatusCode;
 
+                if(response.Content.Headers.ContentLength > _maxFileSizeBytes)
+                {
+                    throw new ResponseTooLargeException(url, _maxFileSizeBytes);
+                }
+
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
-                var stored = await _store.SaveAsync(url, stream, cancellationToken);
+                var stored = await _store.SaveAsync(url, stream, _maxFileSizeBytes, cancellationToken);
 
                 _logger.LogInformation("Saved {Url} to {FilePath} ({FileSize} bytes)", url, stored.Path, stored.Bytes);
 

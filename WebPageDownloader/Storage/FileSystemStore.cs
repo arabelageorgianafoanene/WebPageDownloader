@@ -29,7 +29,7 @@ namespace WebPageDownloader.Storage
             }
         }
 
-        public async Task<StoredPage> SaveAsync(Uri url, Stream content, CancellationToken cancellationToken)
+        public async Task<StoredPage> SaveAsync(Uri url, Stream content, long limit, CancellationToken cancellationToken)
         {
             var saved = false;
 
@@ -49,7 +49,7 @@ namespace WebPageDownloader.Storage
                     tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     bufferSize: 81920, useAsync: true))
                 {
-                    await content.CopyToAsync(file, cancellationToken);
+                    await StreamLimiter.CopyWithLimitAsync(content, file, limit, url, cancellationToken);
                     await file.FlushAsync(cancellationToken);
                     bytes = file.Length;
                 }

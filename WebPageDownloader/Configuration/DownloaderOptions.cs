@@ -14,5 +14,8 @@ namespace WebPageDownloader.Configuration
 
         [Required]
         public string OutputDirectory { get; init; } = "output";
+
+        [Range(1, long.MaxValue)]
+        public long MaxFileSizeBytes { get; init; } = 10 * 1024 * 1024; 
     }
 }
