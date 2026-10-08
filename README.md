@@ -1,132 +1,138 @@
 # WebPageDownloader
 
-A .NET console application that downloads many web pages concurrently and saves them to disk. It is designed to handle hundreds to thousands of URLs with constant memory use, and it never lets one failing URL stop the rest of the run.
+A .NET console application that reads a list of URLs from a text file, downloads each page in parallel and saves it to disk. Transient failures are retried automatically, and every URL ends up with a recorded result, whether it succeeded or failed.
 
 ## Features
 
-- **Bounded concurrency**: a configurable number of downloads run in parallel (`Parallel.ForEachAsync`), so the target servers and the local machine are not overwhelmed.
-- **Streaming to disk**: each response body is copied to a file in small chunks. A page is never held in memory as a whole, so memory use does not grow with page size or URL count.
-- **Safe writes**: a page is written to a temporary file and renamed to its final name only when the download completed. A cancelled or failed download never leaves a half-written file that looks valid.
-- **Per-URL failure handling**: network errors, timeouts, non-success HTTP status codes and I/O errors are recorded for that URL only. All other URLs continue.
-- **Cancellation**: Ctrl+C cancels the run cleanly and removes temporary files of in-progress downloads.
-- **Manifest**: every URL gets one line in `results.jsonl` (outcome, status code, file path, size, error), so results can be audited or post-processed.
-- **Configurable**: concurrency, request timeout and output folder come from `appsettings.json` and can be overridden on the command line.
+- Parallel downloads with a configurable concurrency limit
+- Retry with exponential backoff and jitter (Polly), applied to the whole download-and-save operation
+- Per-attempt timeout
+- Maximum page size, enforced from the `Content-Length` header and again while streaming
+- Atomic file writes (temporary file, then move), so a failed attempt never leaves a partial file
+- Failures are isolated: one failing URL does not stop the others
+- Graceful cancellation with Ctrl+C
+- Results are written to a JSON manifest
 
-## Requirements
+## Prerequisites
 
-- [.NET SDK](https://dotnet.microsoft.com/download) 10.0 or later
+- [.NET SDK](https://dotnet.microsoft.com/download) 10 (the solution uses the `.slnx` format, which needs SDK 9.0.200 or later)
+- A text file with one URL per line
 
 ## Getting started
 
-```bash
+```powershell
 git clone https://github.com/arabelageorgianafoanene/WebPageDownloader.git
 cd WebPageDownloader
-
 dotnet build
+```
+
+## Usage
+
+Run from the repository root (the folder containing the `.slnx`):
+
+```powershell
 dotnet run --project WebPageDownloader -- urls.txt
 ```
 
-`urls.txt` is a plain text file with one absolute `http`/`https` URL per line:
+The `--` separates the arguments of `dotnet` from those of the application. The first argument after it must be the path to the URLs file. Relative paths are resolved from the folder you run the command in.
+
+### Input file
+
+One URL per line:
 
 ```
-https://example.com/
-https://www.wikipedia.org/
-https://dotnet.microsoft.com/
+https://example.com
+https://httpbin.org/status/404
+https://httpbin.org/status/503
 ```
 
-Duplicate URLs are downloaded once. Invalid URLs are reported as failed results and do not stop the run.
+### Options
+
+Options use the .NET configuration syntax and go after the file path. They can also be set in `appsettings.json` under the `Downloader` section.
+
+| Option | Description | Default |
+|---|---|---|
+| `--Downloader:MaxConcurrency` | Number of parallel downloads | see `appsettings.json` |
+| `--Downloader:OutputDirectory` | Folder where pages are saved | `output` |
+| `--Downloader:RequestTimeoutSeconds` | Timeout for each download attempt | see `appsettings.json` |
+| `--Downloader:MaxFileSizeBytes` | Maximum size of a downloaded page, in bytes | `10485760` (10 MB) |
+
+Example:
+
+```powershell
+dotnet run --project WebPageDownloader -- urls.txt --Downloader:MaxConcurrency=5 --Downloader:OutputDirectory=output
+```
+
+Invalid values (for example a non-positive size limit) are rejected at startup with a list of the problems.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | The run completed. Check the manifest for the result of each URL |
+| `1` | Missing argument, file not found, invalid configuration or unhandled error |
+| `130` | Cancelled by the user (Ctrl+C) |
 
 ## Output
 
-By default everything is written to the `output` folder:
+- Each successfully downloaded page is saved in the output directory as the raw response body.
+- A JSON manifest records the result for every URL: success or failure, HTTP status code, saved file path, size and error message.
+- Only the page itself is saved. Images, CSS and scripts are not downloaded, and pages rendered by JavaScript are saved as the server sent them, so a page may look different from the original when opened locally.
+
+## Reliability
+
+Each URL is downloaded and saved as one unit of work, wrapped by a single Polly resilience pipeline (`downloadAndSave`). A retry therefore repeats the request, the body read and the file write.
+
+| Aspect | Behavior |
+|---|---|
+| Retries | Up to 3, exponential backoff starting at 1 second, with jitter |
+| Retried | Network errors, timeouts, HTTP 408, 429 and 5xx, and I/O errors |
+| Not retried | Other 4xx responses (for example 404), pages over the size limit, and cancellation |
+| Timeout | Each attempt has its own timeout (`RequestTimeoutSeconds`) |
+| After the last attempt | The URL is recorded as failed, with the status code and message, and the run continues |
+| Cancellation | Ctrl+C stops the run immediately, without further retries |
+
+### Size limit
+
+A page larger than `MaxFileSizeBytes` is rejected and is not retried. The limit is checked in two places:
+
+1. **Early check:** if the response declares a `Content-Length` above the limit, the download is rejected before any data is read.
+2. **Streaming check:** the bytes are counted while the body is copied to disk, because the header can be missing or wrong. The copy stops as soon as the limit is exceeded, and the temporary file is removed.
+
+The streaming check measures the decompressed size, since the HTTP client decompresses responses automatically.
+
+## Design decisions
+
+- **One Polly pipeline around download and save, not the standard HTTP resilience handler.** The handler only covers the HTTP exchange. Here the unit of work includes streaming the body to disk, and a dropped connection or a write error during that step would not be retried by the handler. The pipeline covers all of it, so there is a single retry layer and attempts are not multiplied.
+- **No circuit breaker.** One `HttpClient` calls many different hosts. A breaker shared across them would let one failing site block healthy ones.
+- **Exceptions drive the retry.** `DownloadPageAsync` calls `EnsureSuccessStatusCode()` and lets exceptions propagate, so Polly can classify them. The failed result is built once, after the retries are exhausted.
+- **Results are stored by index.** Each parallel iteration writes to its own slot of a pre-sized array. This is thread-safe without locks and keeps the results in the same order as the input URLs.
+- **Polly owns the timeouts.** `HttpClient.Timeout` is infinite, and the pipeline applies the per-attempt timeout.
+
+## Project structure
 
 ```
-output/
-├── 3A7F9C21B4E05D....html     # one file per successfully downloaded URL
-├── 9B12E7F0A3C4D1....html
-└── manifest.json              # one JSON entry per URL
+WebPageDownloader.slnx
+├─ WebPageDownloader/
+│   ├─ Application/      DownloadApplication: orchestrates a run
+│   ├─ Configuration/    DownloaderOptions and validation
+│   ├─ Extensions/       service registration, including the Polly pipeline
+│   ├─ Input/            URL source (reads the URLs file)
+│   ├─ Models/           DownloadResult
+│   ├─ Services/         WebPageDownloader: parallel download, retry, error handling
+│   ├─ Storage/          page store, size-limited stream copy, ResponseTooLargeException
+│   └─ Program.cs        argument handling and host setup
+└─ WebPageDownloaderTests/
 ```
 
-Example manifest lines:
+## Tests
 
-```json
-{"Url":"https://example.com/","IsSuccess":true,"StatusCode":200,"FilePath":"output/3A7F9C21B4E05D....html","Bytes":48213,"Error":null}
-{"Url":"https://example.com/missing","IsSuccess":false,"StatusCode":404,"FilePath":null,"Bytes":null,"Error":"HTTP 404 (Not Found)"}
+```powershell
+dotnet test
 ```
 
-File names are the SHA-256 hash of the URL. The same URL always maps to the same file, so re-running the program overwrites earlier results instead of creating duplicates. The manifest is the lookup from URL to file.
+## Troubleshooting
 
-## Configuration
-
-Settings live in `appsettings.json` (section `Downloader`):
-
-```json
-{
-  "Downloader": {
-    "MaxConcurrency": 20,
-    "RequestTimeoutSeconds": 30,
-    "OutputDirectory": "output"
-  }
-}
-```
-
-| Setting | Default | Valid range | Description |
-|---|---|---|---|
-| `MaxConcurrency` | 10 | 1-200 | Number of downloads running at the same time. This limits parallelism only. The number of URLs is not limited. |
-| `RequestTimeoutSeconds` | 30 | 1-300 | Timeout per HTTP request. |
-| `OutputDirectory` | `output` | - | Folder for downloaded pages and the manifest. |
-
-Values are validated at startup, and the program fails fast with a clear message if a setting is invalid.
-
-Command-line arguments override the file:
-
-```bash
-dotnet run --project WebPageDownloader -- urls.txt --Downloader:MaxConcurrency=50 --Downloader:OutputDirectory=C:\temp\pages
-```
-
-Precedence: command line, then environment variables, then `appsettings.json`, then the defaults in code.
-
-## Design
-
-| Concern | Decision | Why |
-|---|---|---|
-| Concurrency | `Parallel.ForEachAsync` with `MaxDegreeOfParallelism` | Built-in throttling and cancellation. Does not create a task per URL up front, so it scales to large inputs. |
-| Memory | Stream response bodies to disk (`ResponseHeadersRead` + `CopyToAsync`) | Memory per download stays at roughly one 80 KB buffer, regardless of page size. |
-| Persistence | Files on disk plus a JSON Lines manifest | Pages are large, write-once blobs. Files fit that naturally and need no extra dependencies. JSON Lines is append-friendly and stays valid after a crash. |
-| Storage abstraction | `IPageStore` interface, `FileSystemPageStore` implementation | The downloader does not know about the disk, so a database-backed store can be added without touching the download logic. |
-| Failures | Every non-cancellation exception becomes a failed `DownloadResult` | `Parallel.ForEachAsync` stops on the first unhandled exception, so failures must be contained per URL. |
-| Cancellation | The `CancellationToken` is passed through every async call | Caller cancellation propagates. Timeouts are treated as ordinary failures. |
-| Atomic writes | Write to `*.tmp`, then rename | A final file name only ever refers to a complete page. Leftover `.tmp` files from a crashed run are removed at startup. |
-| Configuration | `IOptions<DownloaderOptions>` with data annotation validation | One place for settings, validated on startup. |
-| HTTP | Typed `HttpClient` via `IHttpClientFactory` | Correct connection pooling and lifetime management. |
-
-### Project layout
-
-```
-WebPageDownloader/
-├── WebPageDownloader.slnx
-└── WebPageDownloader/              # console application
-    ├── Configuration/              # DownloaderOptions
-    ├── Models/                     # DownloadResult
-    ├── Services/                   # IWebPageDownloader and its HTTP implementation
-    ├── Storage/                    # IPageStore, FileSystemPageStore
-    ├── appsettings.json
-    └── Program.cs
-```
-
-## Assumptions and limitations
-
-- Saved files use the `.html` extension for every URL. This is a convenience for the "web pages" use case. Other content types (JSON, images, PDF) are saved correctly but with that extension.
-- Only the response body of successful (2xx) responses is saved. Other responses are recorded in the manifest with their status code.
-- Redirects are followed by `HttpClient` with its default settings.
-- No JavaScript is executed. The program saves the HTML the server returns, not the rendered page.
-- URLs that differ only in the fragment (`#section`) are treated as different URLs.
-- The program does not honour `robots.txt` or per-site rate limits.
-
-## Possible next steps
-
-- **Richer command-line interface with System.CommandLine.** Today the input file is a single
-  positional argument that `Program.cs` picks out of the command-line arguments by hand
-  That is deliberately small. If the interface grows (more options, subcommands), I would move to
-  [System.CommandLine](https://learn.microsoft.com/dotnet/standard/commandline/), Microsoft's library for
-  command-line parsing. 
+- **"Missing argument: path of the file with URLs."** The first argument after `--` must be the file path and must not start with `-`.
+- **"File not found."** Relative paths are resolved from the current working directory. Use a full path if in doubt.
+- **No retry messages in the log.** Retries are logged at `Warning` level. Make sure the logging configuration does not filter them out.
