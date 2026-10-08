@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Net;
 using WebPageDownloader.Configuration;
 using WebPageDownloader.Input;
@@ -25,21 +24,19 @@ namespace WebPageDownloader.Extensions
         public static IServiceCollection AddWebPageDownloader(this IServiceCollection services)
         {
             services
-                .AddHttpClient<IWebPageDownloader, Services.WebPageDownloader>((sp, client) =>
+                .AddHttpClient<IWebPageDownloader, Services.WebPageDownloader>(client =>
                 {
-                     var options = sp.GetRequiredService<IOptions<DownloaderOptions>>().Value;
-                     client.Timeout = Timeout.InfiniteTimeSpan;
-                     client.DefaultRequestHeaders.UserAgent.ParseAdd("WebPageDownloader/1.0");
+                    client.Timeout = Timeout.InfiniteTimeSpan;   
+                    client.DefaultRequestHeaders.UserAgent.ParseAdd("WebPageDownloader/1.0");
                 })
-                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-                 {
-                     AutomaticDecompression = DecompressionMethods.All,
-                     MaxAutomaticRedirections = 5,
-                     PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-                 });
+                .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+                {
+                    AutomaticDecompression = DecompressionMethods.All,
+                    MaxAutomaticRedirections = 5,
+                    PooledConnectionLifetime = TimeSpan.FromMinutes(5)
+                });
 
             services.AddSingleton<IPageStore, FileSystemStore>();
-
             services.AddSingleton<IManifestWriter, JsonManifestWriter>();
 
             return services;

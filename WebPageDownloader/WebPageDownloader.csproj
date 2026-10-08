@@ -16,12 +16,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Exceptions\" />
+    <PackageReference Include="Polly.Extensions" Version="8.8.0" />
   </ItemGroup>
 
 </Project>
