@@ -125,7 +125,7 @@ WebPageDownloader.slnx
 └─ WebPageDownloaderTests/
 ```
 
-## Tests
+## Tests: Run tests with dotnet test (the repo's global.json enables the Microsoft.Testing.Platform runner for .NET 10) 
 
 ```powershell
 dotnet test
