@@ -5,7 +5,7 @@ using WebPageDownloader.Storage;
 
 namespace WebPageDownloader.Application
 {
-    internal sealed class DownloadApplication
+    public sealed class DownloadApplication
     {
         private readonly IWebPageDownloader _downloader;
         private readonly IUrlSource _urlSource;
