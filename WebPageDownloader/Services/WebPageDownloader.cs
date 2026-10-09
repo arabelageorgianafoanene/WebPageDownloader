@@ -10,7 +10,7 @@ using WebPageDownloader.Storage;
 
 namespace WebPageDownloader.Services
 {
-    internal sealed class WebPageDownloader : IWebPageDownloader
+    public sealed class WebPageDownloader : IWebPageDownloader
     {
         private readonly HttpClient _httpClient;
         private readonly IPageStore _store;

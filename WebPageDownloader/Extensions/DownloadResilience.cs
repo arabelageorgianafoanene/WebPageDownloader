@@ -10,7 +10,7 @@ using WebPageDownloader.Configuration;
 
 namespace WebPageDownloader.Extensions
 {
-    internal static class DownloadResilience
+    public static class DownloadResilience
     {
         public const string PipelineName = "downloadAndSave";
         public static IServiceCollection AddDownloadResilience(this IServiceCollection services)
